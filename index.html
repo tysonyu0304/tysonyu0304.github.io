@@ -81,7 +81,6 @@
 
     <div class="header">
         <h1>主動雲台補償 (Active Gimbal) 模擬</h1>
-        <p>觀察底盤為了加速而傾斜時，伺服馬達如何進行逆向補償以維持上方載具絕對水平。</p>
     </div>
 
     <div class="panel">
@@ -213,7 +212,7 @@
             
             // 底盤主體
             simCtx.fillStyle = '#4da8da';
-            simCtx.fillRect(-15, -110, 30, 100);
+            simCtx.fillRect(-20, -110, 40, 50);
             
             // 伺服馬達關節點
             simCtx.beginPath(); simCtx.arc(0, -110, 8, 0, Math.PI * 2);
@@ -230,12 +229,14 @@
             // 畫出平台
             simCtx.fillStyle = '#00d2d3';
             simCtx.fillRect(-50, -10, 100, 10);
-            
+
+            /*
             // 平台上放一個水杯來展示水平狀態
             simCtx.fillStyle = '#e15f41';
             simCtx.fillRect(-15, -40, 30, 30);
             simCtx.fillStyle = '#f5f5f5';
             simCtx.fillRect(-15, -40, 30, 5);
+            */
 
             simCtx.restore();
         }
