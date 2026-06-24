@@ -1,0 +1,277 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>串級 PID 控制模擬 - 雙輪平衡機器人</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: #1e1e24;
+            color: #f5f5f5;
+            margin: 0;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+        .header {
+            text-align: center;
+            margin-bottom: 20px;
+        }
+        .header h1 { margin: 0 0 10px 0; color: #4da8da; }
+        .header p { margin: 0; color: #a9a9a9; }
+        .control-panel {
+            background-color: #2b2b36;
+            padding: 20px;
+            border-radius: 8px;
+            width: 800px;
+            box-sizing: border-box;
+            margin-bottom: 20px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.3);
+            display: flex;
+            align-items: center;
+            gap: 20px;
+        }
+        .slider-container { flex-grow: 1; }
+        input[type=range] { width: 100%; cursor: pointer; }
+        .value-display { font-size: 1.2rem; font-weight: bold; color: #e15f41; width: 80px; text-align: right; }
+        .canvas-container {
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+            width: 800px;
+        }
+        canvas {
+            background-color: #2b2b36;
+            border-radius: 8px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.3);
+            width: 100%;
+        }
+        .legend {
+            display: flex;
+            justify-content: center;
+            gap: 20px;
+            margin-top: -10px;
+            margin-bottom: 10px;
+            font-size: 0.9rem;
+        }
+        .legend-item { display: flex; align-items: center; gap: 5px; }
+        .color-box { width: 12px; height: 12px; border-radius: 2px; }
+    </style>
+</head>
+<body>
+
+    <div class="header">
+        <h1>雙輪平衡機器人：串級 PID 姿態與速度控制</h1>
+        <p>觀察外環 (速度) 誤差如何產生內環 (傾角) 的目標值，進而推動機器人。</p>
+    </div>
+
+    <div class="control-panel">
+        <label for="speedSlider" style="font-weight: bold;">遙控目標速度 (Target Velocity):</label>
+        <div class="slider-container">
+            <input type="range" id="speedSlider" min="-100" max="100" value="0">
+        </div>
+        <div class="value-display" id="speedValue">0</div>
+    </div>
+
+    <div class="canvas-container">
+        <canvas id="simCanvas" width="800" height="250"></canvas>
+        
+        <div class="legend">
+            <div class="legend-item"><div class="color-box" style="background: #e15f41;"></div> 目標速度</div>
+            <div class="legend-item"><div class="color-box" style="background: #4da8da;"></div> 實際速度</div>
+            <div class="legend-item" style="margin-left: 20px;"><div class="color-box" style="background: #f7d794;"></div> 目標傾角</div>
+            <div class="legend-item"><div class="color-box" style="background: #786fa6;"></div> 實際傾角</div>
+        </div>
+        <canvas id="chartCanvas" width="800" height="300"></canvas>
+    </div>
+
+    <script>
+        const simCanvas = document.getElementById('simCanvas');
+        const simCtx = simCanvas.getContext('2d');
+        const chartCanvas = document.getElementById('chartCanvas');
+        const chartCtx = chartCanvas.getContext('2d');
+        const speedSlider = document.getElementById('speedSlider');
+        const speedValue = document.getElementById('speedValue');
+
+        // 物理與控制變數
+        let x = 400;             // 位置
+        let v = 0;               // 真實速度
+        let theta = 0;           // 真實傾角 (弧度)
+        let omega = 0;           // 角速度
+        let target_v = 0;        // 來自搖桿/滑桿的目標速度
+        let target_theta = 0;    // 速度環算出來的目標傾角
+
+        // 歷史資料 (繪圖用)
+        const historyLength = 400;
+        const v_history = new Array(historyLength).fill(0);
+        const target_v_history = new Array(historyLength).fill(0);
+        const theta_history = new Array(historyLength).fill(0);
+        const target_theta_history = new Array(historyLength).fill(0);
+
+        // 更新滑桿數值
+        speedSlider.addEventListener('input', (e) => {
+            target_v = parseFloat(e.target.value);
+            speedValue.textContent = target_v.toFixed(0);
+        });
+
+        // 核心運算迴圈 (模擬物理與 PID)
+        function updatePhysics() {
+            const dt = 0.02; // 時間步長
+
+            // 1. 外環：速度 PID 控制器 (簡化為 P 控制)
+            // 速度誤差會轉換成「目標傾角」
+            const max_tilt = 0.3; // 最大傾斜角度限制 (約 17 度)
+            let speedError = target_v - v;
+            target_theta = speedError * 0.008; 
+            
+            // 限制安全傾斜角度，避免摔倒
+            if(target_theta > max_tilt) target_theta = max_tilt;
+            if(target_theta < -max_tilt) target_theta = -max_tilt;
+
+            // 2. 內環：直立 PID 控制器與機器人動力學 (簡化模型)
+            // 讓機器人的真實角度逼近目標角度
+            let thetaError = target_theta - theta;
+            let theta_accel = (thetaError * 150) - (omega * 10); 
+            
+            omega += theta_accel * dt;
+            theta += omega * dt;
+
+            // 傾斜產生加速度 (重心偏移導致馬達出力推動)
+            let v_accel = (theta * 250) - (v * 0.5); // 包含微小的動摩擦阻力
+            
+            v += v_accel * dt;
+            x += v * dt;
+
+            // 讓機器人如果跑出邊界，可以從另一邊出來 (無邊際地圖效果)
+            if (x > 850) x = -50;
+            if (x < -50) x = 850;
+
+            // 記錄歷史資料
+            v_history.push(v); v_history.shift();
+            target_v_history.push(target_v); target_v_history.shift();
+            theta_history.push(theta * 57.29); theta_history.shift(); // 存成角度度數
+            target_theta_history.push(target_theta * 57.29); target_theta_history.shift();
+        }
+
+        // 繪製機器人
+        function drawRobot() {
+            simCtx.clearRect(0, 0, simCanvas.width, simCanvas.height);
+            
+            // 畫地面
+            simCtx.beginPath();
+            simCtx.moveTo(0, 200);
+            simCtx.lineTo(800, 200);
+            simCtx.strokeStyle = '#555';
+            simCtx.lineWidth = 4;
+            simCtx.stroke();
+
+            // 畫格線背景 (呈現移動感)
+            simCtx.strokeStyle = '#333';
+            simCtx.lineWidth = 2;
+            for(let i = -100; i < 900; i+= 50) {
+                let lineX = (i - x % 50);
+                simCtx.beginPath();
+                simCtx.moveTo(lineX, 200);
+                simCtx.lineTo(lineX, 210);
+                simCtx.stroke();
+            }
+
+            // 保存座標系
+            simCtx.save();
+            simCtx.translate(x, 185); // 輪軸中心
+
+            // 畫輪子
+            simCtx.beginPath();
+            simCtx.arc(0, 0, 15, 0, Math.PI * 2);
+            simCtx.fillStyle = '#f5f5f5';
+            simCtx.fill();
+            simCtx.strokeStyle = '#333';
+            simCtx.lineWidth = 3;
+            simCtx.stroke();
+            
+            // 輪子上的轉動標記
+            simCtx.save();
+            simCtx.rotate(x * 0.05); // 模擬車輪滾動
+            simCtx.beginPath();
+            simCtx.moveTo(0, 0);
+            simCtx.lineTo(0, 15);
+            simCtx.strokeStyle = '#e15f41';
+            simCtx.stroke();
+            simCtx.restore();
+
+            // 旋轉畫布來畫車身 (根據 theta 傾角)
+            simCtx.rotate(theta);
+
+            // 畫機殼主體
+            simCtx.fillStyle = '#4da8da';
+            simCtx.fillRect(-20, -100, 40, 90);
+            
+            // 畫上方重物/電池箱
+            simCtx.fillStyle = '#e15f41';
+            simCtx.fillRect(-25, -110, 50, 30);
+
+            simCtx.restore();
+        }
+
+        // 繪製折線圖
+        function drawCharts() {
+            chartCtx.clearRect(0, 0, chartCanvas.width, chartCanvas.height);
+            
+            // 分割上下兩個圖表區域
+            const height = chartCanvas.height;
+            const width = chartCanvas.width;
+            const midY = height / 2;
+
+            // 畫分隔線與基準線
+            chartCtx.strokeStyle = '#444';
+            chartCtx.lineWidth = 1;
+            chartCtx.beginPath();
+            chartCtx.moveTo(0, midY); chartCtx.lineTo(width, midY); // 中間分隔
+            chartCtx.moveTo(0, height/4); chartCtx.lineTo(width, height/4); // 上方 0 線 (速度)
+            chartCtx.moveTo(0, height*0.75); chartCtx.lineTo(width, height*0.75); // 下方 0 線 (角度)
+            chartCtx.stroke();
+
+            // 繪圖函數
+            function drawLine(data, color, offset, scale) {
+                chartCtx.beginPath();
+                chartCtx.strokeStyle = color;
+                chartCtx.lineWidth = 2;
+                for(let i = 0; i < historyLength; i++) {
+                    let px = (i / historyLength) * width;
+                    let py = offset - (data[i] * scale);
+                    if(i === 0) chartCtx.moveTo(px, py);
+                    else chartCtx.lineTo(px, py);
+                }
+                chartCtx.stroke();
+            }
+
+            // 速度圖表 (上半部)
+            drawLine(target_v_history, '#e15f41', height/4, 0.8); // 目標速度
+            drawLine(v_history, '#4da8da', height/4, 0.8);        // 實際速度
+
+            // 傾角圖表 (下半部)
+            drawLine(target_theta_history, '#f7d794', height*0.75, 4); // 目標傾角
+            drawLine(theta_history, '#786fa6', height*0.75, 4);        // 實際傾角
+            
+            // 標示文字
+            chartCtx.fillStyle = '#aaa';
+            chartCtx.font = '12px Arial';
+            chartCtx.fillText('速度環 (Velocity)', 10, 20);
+            chartCtx.fillText('直立環 (Pitch Angle)', 10, midY + 20);
+        }
+
+        // 主動畫迴圈
+        function loop() {
+            updatePhysics();
+            drawRobot();
+            drawCharts();
+            requestAnimationFrame(loop);
+        }
+
+        // 啟動
+        loop();
+    </script>
+</body>
+</html>
