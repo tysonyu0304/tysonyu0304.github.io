@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>進階串級 PID 模擬 - 平台傾角與重心干擾</title>
+    <title>雙輪平衡機器人 - 主動水平平台模擬</title>
     <style>
         body {
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
@@ -16,7 +16,7 @@
             align-items: center;
         }
         .header { text-align: center; margin-bottom: 15px; }
-        .header h1 { margin: 0 0 10px 0; color: #4da8da; }
+        .header h1 { margin: 0 0 10px 0; color: #00d2d3; }
         .header p { margin: 0; color: #a9a9a9; font-size: 0.95rem; }
         .panel {
             background-color: #2b2b36;
@@ -26,17 +26,43 @@
             box-sizing: border-box;
             margin-bottom: 15px;
             box-shadow: 0 4px 6px rgba(0,0,0,0.3);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
         }
-        .control-row {
+        .control-group {
             display: flex;
             align-items: center;
-            margin-bottom: 15px;
             gap: 15px;
+            flex-grow: 1;
         }
-        .control-row:last-child { margin-bottom: 0; }
-        label { width: 180px; font-weight: bold; font-size: 0.9rem; }
-        input[type=range] { flex-grow: 1; cursor: pointer; }
-        .value-display { font-size: 1.1rem; font-weight: bold; color: #e15f41; width: 60px; text-align: right; }
+        label { font-weight: bold; font-size: 0.9rem; }
+        input[type=range] { flex-grow: 1; cursor: pointer; max-width: 300px; }
+        .value-display { font-size: 1.1rem; font-weight: bold; color: #4da8da; width: 50px; text-align: right; }
+        
+        /* 切換開關 UI */
+        .toggle-container {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            background: #1e1e24;
+            padding: 10px 15px;
+            border-radius: 8px;
+            border: 1px solid #444;
+        }
+        .switch { position: relative; display: inline-block; width: 50px; height: 24px; }
+        .switch input { opacity: 0; width: 0; height: 0; }
+        .slider {
+            position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0;
+            background-color: #555; transition: .4s; border-radius: 34px;
+        }
+        .slider:before {
+            position: absolute; content: ""; height: 16px; width: 16px;
+            left: 4px; bottom: 4px; background-color: white; transition: .4s; border-radius: 50%;
+        }
+        input:checked + .slider { background-color: #00d2d3; }
+        input:checked + .slider:before { transform: translateX(26px); }
+
         .canvas-container { display: flex; flex-direction: column; gap: 15px; width: 800px; }
         canvas {
             background-color: #2b2b36;
@@ -54,34 +80,35 @@
 <body>
 
     <div class="header">
-        <h1>動態重心偏移與串級 PID 反應模擬</h1>
-        <p>觀察上方平台(伺服馬達)傾斜時，總重心(紅點)如何偏移，並觸發底盤 PID 進行被動防禦與速度修正。</p>
+        <h1>主動雲台補償 (Active Gimbal) 模擬</h1>
+        <p>觀察底盤為了加速而傾斜時，伺服馬達如何進行逆向補償以維持上方載具絕對水平。</p>
     </div>
 
     <div class="panel">
-        <div class="control-row">
-            <label style="color: #4da8da;">遙控目標速度 (V_Target):</label>
+        <div class="control-group">
+            <label style="color: #4da8da;">遙控目標速度:</label>
             <input type="range" id="speedSlider" min="-80" max="80" value="0">
-            <div class="value-display" id="speedValue" style="color: #4da8da;">0</div>
+            <div class="value-display" id="speedValue">0</div>
         </div>
-        <div class="control-row">
-            <label style="color: #e15f41;">平台伺服傾角 (干擾):</label>
-            <input type="range" id="tiltSlider" min="-30" max="30" value="0">
-            <div class="value-display" id="tiltValue">0°</div>
+        
+        <div class="toggle-container">
+            <label style="color: #f5f5f5;">主動水平補償</label>
+            <label class="switch">
+                <input type="checkbox" id="stabilizeCheck" checked>
+                <span class="slider"></span>
+            </label>
         </div>
     </div>
 
     <div class="canvas-container">
-        <canvas id="simCanvas" width="800" height="300"></canvas>
+        <canvas id="simCanvas" width="800" height="320"></canvas>
         
         <div class="legend">
-            <div class="legend-item"><div class="color-box" style="background: #4da8da;"></div> 目標速度</div>
-            <div class="legend-item"><div class="color-box" style="background: #00d2d3;"></div> 實際速度</div>
-            <div class="legend-item" style="margin-left: 20px;"><div class="color-box" style="background: #e15f41;"></div> 平台傾角干擾</div>
-            <div class="legend-item"><div class="color-box" style="background: #feca57;"></div> 目標底盤傾角</div>
-            <div class="legend-item"><div class="color-box" style="background: #ff9ff3;"></div> 實際底盤傾角</div>
+            <div class="legend-item"><div class="color-box" style="background: #ff9ff3;"></div> 底盤傾角 (Pitch)</div>
+            <div class="legend-item"><div class="color-box" style="background: #feca57;"></div> 伺服馬達作動角 (相對於底盤)</div>
+            <div class="legend-item"><div class="color-box" style="background: #00d2d3;"></div> 平台絕對水平角 (對齊地面)</div>
         </div>
-        <canvas id="chartCanvas" width="800" height="280"></canvas>
+        <canvas id="chartCanvas" width="800" height="200"></canvas>
     </div>
 
     <script>
@@ -92,160 +119,123 @@
         
         const speedSlider = document.getElementById('speedSlider');
         const speedValue = document.getElementById('speedValue');
-        const tiltSlider = document.getElementById('tiltSlider');
-        const tiltValue = document.getElementById('tiltValue');
+        const stabilizeCheck = document.getElementById('stabilizeCheck');
 
         // 系統變數
         let x = 400;             
         let v = 0;               
-        let theta = 0;           // 底盤傾角 (弧度)
+        let theta = 0;           // 底盤傾角
         let omega = 0;           
         let target_v = 0;        
-        let platform_angle_deg = 0; // 伺服馬達平台角度 (度數)
-        
-        // 模擬的 PID 參數 (對應你的 Kp=23.5, Kd=0.25, Kp_speed=2.5, Ki_speed=0.1 並做視覺縮放)
         let speed_integral = 0;
         let target_theta = 0;
 
         // 歷史資料
         const historyLength = 400;
         const history = {
-            target_v: new Array(historyLength).fill(0),
-            v: new Array(historyLength).fill(0),
-            platform_tilt: new Array(historyLength).fill(0),
-            target_theta: new Array(historyLength).fill(0),
-            theta: new Array(historyLength).fill(0)
+            base_pitch: new Array(historyLength).fill(0),
+            servo_angle: new Array(historyLength).fill(0),
+            platform_absolute: new Array(historyLength).fill(0)
         };
 
-        // 監聽滑桿
         speedSlider.addEventListener('input', (e) => {
             target_v = parseFloat(e.target.value);
             speedValue.textContent = target_v.toFixed(0);
         });
-        tiltSlider.addEventListener('input', (e) => {
-            platform_angle_deg = parseFloat(e.target.value);
-            tiltValue.textContent = platform_angle_deg + '°';
-        });
 
         function updatePhysics() {
             const dt = 0.02; 
-            const platform_rad = platform_angle_deg * (Math.PI / 180);
+            const isStabilized = stabilizeCheck.checked;
 
-            // 【物理核心：重心偏移計算】
-            // 平台傾斜會導致整台車的「物理平衡零點」發生改變
-            // 假設平台重量佔全車的 35%
-            const mass_ratio = 0.35; 
-            const cog_shift_angle = platform_rad * mass_ratio; 
-
-            // 1. 外環：速度 PI 控制器
+            // 1. 速度環 PI 控制
             let speedError = target_v - v;
             speed_integral += speedError * dt;
-            // 防積分飽和
             if(speed_integral > 200) speed_integral = 200;
             if(speed_integral < -200) speed_integral = -200;
 
-            // 目標傾角 = (速度 PID 輸出) + (重心偏移的補償)
-            // 當平台往前傾 (cog_shift_angle > 0)，底盤必須往後仰 (目標角度為負) 才能抗衡
-            let speed_pid_output = (speedError * 0.005) + (speed_integral * 0.001);
-            target_theta = speed_pid_output - cog_shift_angle; 
-
-            // 限制最大傾角
+            target_theta = (speedError * 0.005) + (speed_integral * 0.001);
             if(target_theta > 0.4) target_theta = 0.4;
             if(target_theta < -0.4) target_theta = -0.4;
 
-            // 2. 內環：直立 PD 控制器與機器人動力學
+            // 2. 直立環 PD 控制
             let thetaError = target_theta - theta;
-            
-            // 模擬馬達出力 (Kp_pitch, Kd_pitch 的縮放版)
             let motor_accel = (thetaError * 180) - (omega * 12); 
             
-            // 系統角加速度 = 重力傾覆力矩 (包含真實重心偏移) + 馬達反作用力
-            // 當真實傾角(theta) 無法對齊 重心偏移(cog_shift_angle)時，就會受到重力拉扯
-            let gravity_torque = (theta + cog_shift_angle) * 30;
-            
+            let gravity_torque = theta * 30;
             omega += (gravity_torque + motor_accel) * dt;
             theta += omega * dt;
 
-            // 馬達出力推動輪胎前進
             v += (-motor_accel * 0.4) * dt;
             x += v * dt;
 
-            // 無邊際地圖
             if (x > 850) x = -50;
             if (x < -50) x = 850;
 
-            // 記錄數據 (全部轉為度數儲存以方便繪圖)
-            history.target_v.push(target_v); history.target_v.shift();
-            history.v.push(v); history.v.shift();
-            history.platform_tilt.push(platform_angle_deg); history.platform_tilt.shift();
-            history.target_theta.push(target_theta * 57.3); history.target_theta.shift();
-            history.theta.push(theta * 57.3); history.theta.shift();
+            // 3. 平台伺服馬達邏輯
+            // 如果開啟補償，伺服馬達角度 = -底盤角度
+            let servo_angle_rad = isStabilized ? -theta : 0;
+            let platform_absolute_rad = theta + servo_angle_rad;
+
+            // 記錄數據 (轉為度數)
+            history.base_pitch.push(theta * 57.3); history.base_pitch.shift();
+            history.servo_angle.push(servo_angle_rad * 57.3); history.servo_angle.shift();
+            history.platform_absolute.push(platform_absolute_rad * 57.3); history.platform_absolute.shift();
         }
 
         function drawRobot() {
             simCtx.clearRect(0, 0, simCanvas.width, simCanvas.height);
             
-            // 畫地面與格線
+            // 畫地面
             simCtx.beginPath();
-            simCtx.moveTo(0, 250); simCtx.lineTo(800, 250);
+            simCtx.moveTo(0, 260); simCtx.lineTo(800, 260);
             simCtx.strokeStyle = '#555'; simCtx.lineWidth = 4; simCtx.stroke();
             simCtx.strokeStyle = '#333'; simCtx.lineWidth = 2;
             for(let i = -100; i < 900; i+= 50) {
                 let lineX = (i - x % 50);
-                simCtx.beginPath(); simCtx.moveTo(lineX, 250); simCtx.lineTo(lineX, 260); simCtx.stroke();
+                simCtx.beginPath(); simCtx.moveTo(lineX, 260); simCtx.lineTo(lineX, 270); simCtx.stroke();
             }
 
             simCtx.save();
-            simCtx.translate(x, 230); // 輪軸中心
+            simCtx.translate(x, 240); // 輪軸中心
 
             // 畫輪子
             simCtx.beginPath(); simCtx.arc(0, 0, 20, 0, Math.PI * 2);
             simCtx.fillStyle = '#1e1e24'; simCtx.fill();
             simCtx.strokeStyle = '#a9a9a9'; simCtx.lineWidth = 4; simCtx.stroke();
             simCtx.save();
-            simCtx.rotate(x * 0.05); // 輪胎滾動視覺
+            simCtx.rotate(x * 0.05); 
             simCtx.beginPath(); simCtx.moveTo(0, 0); simCtx.lineTo(0, 20);
-            simCtx.strokeStyle = '#00d2d3'; simCtx.stroke();
+            simCtx.strokeStyle = '#4da8da'; simCtx.stroke();
             simCtx.restore();
 
-            // 旋轉畫布畫底盤 (theta)
+            // 旋轉底盤
             simCtx.rotate(theta);
             
-            // 底盤本體
+            // 底盤主體
             simCtx.fillStyle = '#4da8da';
-            simCtx.fillRect(-15, -100, 30, 90);
+            simCtx.fillRect(-15, -110, 30, 100);
             
-            // 關節樞紐
-            simCtx.beginPath(); simCtx.arc(0, -100, 8, 0, Math.PI * 2);
+            // 伺服馬達關節點
+            simCtx.beginPath(); simCtx.arc(0, -110, 8, 0, Math.PI * 2);
             simCtx.fillStyle = '#fff'; simCtx.fill();
 
-            // 旋轉畫布畫上方平台 (相對於底盤的伺服馬達角度)
-            simCtx.translate(0, -100);
-            simCtx.rotate(platform_angle_deg * Math.PI / 180);
+            // 根據是否開啟穩定，旋轉上方平台
+            const isStabilized = stabilizeCheck.checked;
+            simCtx.translate(0, -110);
+            if (isStabilized) {
+                // 逆向抵消底盤傾角
+                simCtx.rotate(-theta);
+            }
+
+            // 畫出平台
+            simCtx.fillStyle = '#00d2d3';
+            simCtx.fillRect(-50, -10, 100, 10);
             
-            // 上方平台 (模擬伺服馬達帶動的重物)
+            // 平台上放一個水杯來展示水平狀態
             simCtx.fillStyle = '#e15f41';
-            simCtx.fillRect(-35, -40, 70, 40);
-
-            // 重心 (Center of Gravity) 視覺化提示點
-            // 當平台傾斜時，此紅點會明顯偏離中心軸線
-            simCtx.beginPath(); simCtx.arc(0, -20, 6, 0, Math.PI * 2);
-            simCtx.fillStyle = '#ff4757'; simCtx.fill();
-            simCtx.strokeStyle = '#fff'; simCtx.lineWidth = 2; simCtx.stroke();
-
-            // 畫一條虛線指向地心，表示重力線
-            simCtx.restore(); 
-            simCtx.save();
-            simCtx.translate(x, 230);
-            // 計算絕對空間中的重心位置
-            let absolute_cog_x = Math.sin(theta) * -120 + Math.sin(theta + platform_angle_deg * Math.PI/180) * -20;
-            simCtx.beginPath();
-            simCtx.moveTo(absolute_cog_x, -120);
-            simCtx.lineTo(absolute_cog_x, 20);
-            simCtx.setLineDash([5, 5]);
-            simCtx.strokeStyle = 'rgba(255, 71, 87, 0.5)';
-            simCtx.lineWidth = 2;
-            simCtx.stroke();
+            simCtx.fillRect(-15, -40, 30, 30);
+            simCtx.fillStyle = '#f5f5f5';
+            simCtx.fillRect(-15, -40, 30, 5);
 
             simCtx.restore();
         }
@@ -255,36 +245,26 @@
             const w = chartCanvas.width; const h = chartCanvas.height;
             
             // 基準線
-            chartCtx.strokeStyle = '#444'; chartCtx.lineWidth = 1; chartCtx.setLineDash([]);
+            chartCtx.strokeStyle = '#444'; chartCtx.lineWidth = 1; 
             chartCtx.beginPath();
-            chartCtx.moveTo(0, h/4); chartCtx.lineTo(w, h/4); // 速度 0 線
-            chartCtx.moveTo(0, h/2); chartCtx.lineTo(w, h/2); // 分界線
-            chartCtx.moveTo(0, h*0.75); chartCtx.lineTo(w, h*0.75); // 角度 0 線
+            chartCtx.moveTo(0, h/2); chartCtx.lineTo(w, h/2); // 0 度線
             chartCtx.stroke();
 
-            function drawLine(data, color, offset, scale) {
-                chartCtx.beginPath(); chartCtx.strokeStyle = color; chartCtx.lineWidth = 2;
+            function drawLine(data, color, scale) {
+                chartCtx.beginPath(); chartCtx.strokeStyle = color; chartCtx.lineWidth = 2.5;
                 for(let i = 0; i < historyLength; i++) {
                     let px = (i / historyLength) * w;
-                    let py = offset - (data[i] * scale);
+                    let py = (h/2) - (data[i] * scale);
                     if(i === 0) chartCtx.moveTo(px, py);
                     else chartCtx.lineTo(px, py);
                 }
                 chartCtx.stroke();
             }
 
-            // 繪製上半部 (速度)
-            drawLine(history.target_v, '#4da8da', h/4, 0.6);
-            drawLine(history.v, '#00d2d3', h/4, 0.6);
-
-            // 繪製下半部 (角度)
-            drawLine(history.platform_tilt, '#e15f41', h*0.75, 2.5); // 干擾
-            drawLine(history.target_theta, '#feca57', h*0.75, 2.5);  // PID 目標
-            drawLine(history.theta, '#ff9ff3', h*0.75, 2.5);         // 真實姿態
-            
-            chartCtx.fillStyle = '#a9a9a9'; chartCtx.font = '12px Arial';
-            chartCtx.fillText('速度環 (Velocity)', 10, 20);
-            chartCtx.fillText('直立環 (Pitch Angle) 與 平台干擾', 10, h/2 + 20);
+            // 繪製三條曲線
+            drawLine(history.servo_angle, '#feca57', 3);       // 伺服馬達相對角
+            drawLine(history.base_pitch, '#ff9ff3', 3);        // 底盤傾角
+            drawLine(history.platform_absolute, '#00d2d3', 3); // 平台絕對角
         }
 
         function loop() {
