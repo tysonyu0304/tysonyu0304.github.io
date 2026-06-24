@@ -93,7 +93,7 @@
 
     <div class="header">
         <h1>雙輪機器人運作模擬器</h1>
-        <p>此為視覺模擬，數據以 Matlab 模擬為主。</p>
+        <p>馬達參數與實際不同，此為視覺模擬，數據以 Matlab 模擬為主。</p>
     </div>
 
     <div class="panel">
@@ -169,54 +169,52 @@
             const dt = 0.02; 
             const isStabilized = stabilizeCheck.checked;
 
+            // 外環：更敏捷的速度 PID
             let speedError = target_v - v;
             speed_integral += speedError * dt;
             if(speed_integral > 200) speed_integral = 200;
             if(speed_integral < -200) speed_integral = -200;
 
-            target_theta = (speedError * 0.005) + (speed_integral * 0.001);
-            if(target_theta > 0.4) target_theta = 0.4;
-            if(target_theta < -0.4) target_theta = -0.4;
+            // 增強外環 P 與 I 的推力轉換
+            target_theta = (speedError * 0.015) + (speed_integral * 0.003);
+            
+            // 放寬一點點最大傾角限制，讓起步更猛
+            if(target_theta > 0.45) target_theta = 0.45;
+            if(target_theta < -0.45) target_theta = -0.45;
 
+            // 內環：更暴力的直立 PD
             let thetaError = target_theta - theta;
-            let motor_accel = (thetaError * 180) - (omega * 12); 
+            
+            // 參數 180 -> 450 (Kp 拉高)，12 -> 35 (Kd 拉高)
+            let motor_accel = (thetaError * 450) - (omega * 35); 
             
             let gravity_torque = theta * 30;
             omega += (gravity_torque + motor_accel) * dt;
             theta += omega * dt;
 
-            v += (-motor_accel * 0.4) * dt;
+            // 稍微增加輪胎與地面的推力耦合
+            v += (-motor_accel * 0.5) * dt;
             x += v * dt;
 
             if (x > 950) x = -50;
             if (x < -50) x = 950;
 
-            // 計算絕對角度
             let servo_angle_rad = isStabilized ? -theta : 0;
             let platform_absolute_rad = theta + servo_angle_rad;
 
             let pitchDeg = theta * 57.3;
             let absDeg = platform_absolute_rad * 57.3;
 
-            // --- 精確重心 (CoG) 運算模型 ---
-            const L = 80; // 腿部長度
-            const bodyCenterY = 35; // 機身中心相對於關節點的高度
-            const massLeg = 0.2; // 腿部佔總重 20%
-            const massBody = 0.8; // 機身(含電池)佔總重 80%
+            const L = 80; 
+            const bodyCenterY = 35; 
+            const massLeg = 0.2; 
+            const massBody = 0.8; 
 
-            // 關節點的絕對座標 (相對於輪軸)
             let pivot_x = L * Math.sin(theta);
-            
-            // 機身重心的絕對 X 座標
             let body_cog_x = pivot_x + bodyCenterY * Math.sin(platform_absolute_rad);
-            
-            // 腿部重心的絕對 X 座標
             let leg_cog_x = (L / 2) * Math.sin(theta);
-
-            // 系統總重心 X 座標
             let total_cog_x = (massLeg * leg_cog_x) + (massBody * body_cog_x);
 
-            // 更新 UI 數據
             valPitch.textContent = (pitchDeg > 0 ? '+' : '') + pitchDeg.toFixed(1) + '°';
             valAbs.textContent   = (absDeg > 0 ? '+' : '') + absDeg.toFixed(1) + '°';
             valSpeed.textContent = (v > 0 ? '+' : '') + v.toFixed(1); 
@@ -230,7 +228,6 @@
         function drawRobot() {
             simCtx.clearRect(0, 0, simCanvas.width, simCanvas.height);
             
-            // 畫地面
             simCtx.beginPath();
             simCtx.moveTo(0, 260); simCtx.lineTo(900, 260);
             simCtx.strokeStyle = '#555'; simCtx.lineWidth = 4; simCtx.stroke();
@@ -240,7 +237,6 @@
                 simCtx.beginPath(); simCtx.moveTo(lineX, 260); simCtx.lineTo(lineX, 270); simCtx.stroke();
             }
 
-            // --- 畫出全域重力垂載線與重心 ---
             const lastCogX = history.cog_offset[historyLength - 1];
             simCtx.save();
             simCtx.translate(x, 240); 
@@ -259,7 +255,6 @@
             simCtx.save();
             simCtx.translate(x, 240);
 
-            // 畫輪胎
             simCtx.beginPath(); simCtx.arc(0, 0, 20, 0, Math.PI * 2);
             simCtx.fillStyle = '#1e1e24'; simCtx.fill();
             simCtx.strokeStyle = '#a9a9a9'; simCtx.lineWidth = 4; simCtx.stroke();
@@ -269,7 +264,6 @@
             simCtx.strokeStyle = '#00d2d3'; simCtx.lineWidth = 3; simCtx.stroke();
             simCtx.restore();
 
-            // 畫腿部
             simCtx.rotate(theta);
             simCtx.fillStyle = '#4a2f1d'; 
             simCtx.fillRect(-8, -80, 16, 80);
@@ -277,7 +271,6 @@
             simCtx.beginPath(); simCtx.arc(0, -80, 7, 0, Math.PI * 2);
             simCtx.fillStyle = '#dcdde1'; simCtx.fill();
 
-            // 畫機身
             simCtx.translate(0, -80);
             const isStabilized = stabilizeCheck.checked;
             if (isStabilized) {
@@ -292,7 +285,6 @@
             simCtx.fillRect(-15, -80, 10, 5);
             simCtx.restore();
 
-            // 畫上重心紅點 (標靶圖案)
             simCtx.save();
             simCtx.translate(x, 240);
             
@@ -332,10 +324,9 @@
                 chartCtx.stroke();
             }
      
-            // 縮小繪圖比例，讓急停或加速時數值不會跑到畫布外面
-            drawLine(history.base_pitch, '#ff9ff3', 2);       // 從 3 降為 2
-            drawLine(history.platform_absolute, '#00d2d3', 2); // 從 3 降為 2
-            drawLine(history.cog_offset, '#ff4757', 1.5);      // 從 2 降為 1.5
+            drawLine(history.base_pitch, '#ff9ff3', 2);       
+            drawLine(history.platform_absolute, '#00d2d3', 2); 
+            drawLine(history.cog_offset, '#ff4757', 1.5);      
         }
 
         function loop() {
