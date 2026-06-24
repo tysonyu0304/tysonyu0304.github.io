@@ -122,7 +122,7 @@
             <div class="data-item"><span style="color: #ff4757;">重心偏移量:</span> <span id="valCog">0.0</span></div>
         </div>
 
-        <canvas id="chartCanvas" width="900" height="160"></canvas>
+        <canvas id="chartCanvas" width="900" height="200"></canvas>
         <div class="legend">
             <div class="legend-item"><div class="color-box" style="background: #ff9ff3;"></div> 機身平衡傾角</div>
             <div class="legend-item"><div class="color-box" style="background: #00d2d3;"></div> 機身絕對水平角</div>
@@ -208,10 +208,9 @@
             let pivot_x = L * Math.sin(theta);
             
             // 機身重心的絕對 X 座標
-            // 若開啟補償，機身永遠水平，其重心就在關節點正上方，X座標不變
             let body_cog_x = pivot_x + bodyCenterY * Math.sin(platform_absolute_rad);
             
-            // 腿部重心的絕對 X 座標 (假設在腿部正中央)
+            // 腿部重心的絕對 X 座標
             let leg_cog_x = (L / 2) * Math.sin(theta);
 
             // 系統總重心 X 座標
@@ -333,10 +332,10 @@
                 chartCtx.stroke();
             }
      
-            drawLine(history.base_pitch, '#ff9ff3', 3);       
-            drawLine(history.platform_absolute, '#00d2d3', 3); 
-            // 將重心偏移量畫在圖表上，縮放係數設為 2
-            drawLine(history.cog_offset, '#ff4757', 2); 
+            // 縮小繪圖比例，讓急停或加速時數值不會跑到畫布外面
+            drawLine(history.base_pitch, '#ff9ff3', 2);       // 從 3 降為 2
+            drawLine(history.platform_absolute, '#00d2d3', 2); // 從 3 降為 2
+            drawLine(history.cog_offset, '#ff4757', 1.5);      // 從 2 降為 1.5
         }
 
         function loop() {
