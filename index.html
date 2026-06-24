@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>雙輪平衡機器人 - 仿生機身水平補償模擬</title>
+    <title>雙輪平衡機器人 - 機身平衡與平台運作模擬</title>
     <style>
         body {
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
@@ -16,13 +16,13 @@
             align-items: center;
         }
         .header { text-align: center; margin-bottom: 15px; }
-        .header h1 { margin: 0 0 10px 0; color: #00d2d3; }
+        .header h1 { margin: 0 0 10px 0; color: #ff4757; }
         .header p { margin: 0; color: #a9a9a9; font-size: 0.95rem; }
         .panel {
             background-color: #2b2b36;
             padding: 20px;
             border-radius: 8px;
-            width: 900px; /* 稍微加寬以容納更多數據 */
+            width: 900px;
             box-sizing: border-box;
             margin-bottom: 15px;
             box-shadow: 0 4px 6px rgba(0,0,0,0.3);
@@ -74,7 +74,7 @@
             box-shadow: 0 2px 4px rgba(0,0,0,0.2);
         }
         .data-item { font-size: 1.05rem; font-weight: bold; }
-        .data-item span:last-child { color: #fff; display: inline-block; width: 60px; text-align: right; font-family: monospace; font-size: 1.2rem;}
+        .data-item span:last-child { color: #fff; display: inline-block; width: 65px; text-align: right; font-family: monospace; font-size: 1.2rem;}
 
         canvas {
             background-color: #2b2b36;
@@ -92,8 +92,8 @@
 <body>
 
     <div class="header">
-        <h1>主機身主動水平補償 (Active Body Leveling)</h1>
-        <p>觀察下方腿部連桿為了加速而傾斜時，伺服馬達如何維持上方主機身的絕對水平。</p>
+        <h1>雙輪機器人運作模擬器</h1>
+        <p>此為視覺模擬，數據以 Matlab 模擬為主。</p>
     </div>
 
     <div class="panel">
@@ -113,20 +113,20 @@
     </div>
 
     <div class="canvas-container">
-        <canvas id="simCanvas" width="900" height="280"></canvas>
+        <canvas id="simCanvas" width="900" height="300"></canvas>
         
         <div class="data-panel">
-            <div class="data-item"><span style="color: #ff9ff3;">腿部傾角:</span> <span id="valPitch">0.0°</span></div>
-            <div class="data-item"><span style="color: #feca57;">馬達補償:</span> <span id="valServo">0.0°</span></div>
+            <div class="data-item"><span style="color: #ff9ff3;">機身傾角:</span> <span id="valPitch">0.0°</span></div>
             <div class="data-item"><span style="color: #00d2d3;">機身絕對角:</span> <span id="valAbs">0.0°</span></div>
             <div class="data-item"><span style="color: #10ac84;">當前輪速:</span> <span id="valSpeed">0.0</span></div>
+            <div class="data-item"><span style="color: #ff4757;">重心偏移量:</span> <span id="valCog">0.0</span></div>
         </div>
 
-        <canvas id="chartCanvas" width="900" height="180"></canvas>
+        <canvas id="chartCanvas" width="900" height="160"></canvas>
         <div class="legend">
-            <div class="legend-item"><div class="color-box" style="background: #ff9ff3;"></div> 腿部連桿傾角</div>
-            <div class="legend-item"><div class="color-box" style="background: #feca57;"></div> 伺服馬達作動角</div>
+            <div class="legend-item"><div class="color-box" style="background: #ff9ff3;"></div> 機身平衡傾角</div>
             <div class="legend-item"><div class="color-box" style="background: #00d2d3;"></div> 機身絕對水平角</div>
+            <div class="legend-item"><div class="color-box" style="background: #ff4757;"></div> 真實重心偏移 X</div>
         </div>
     </div>
 
@@ -141,9 +141,9 @@
         const stabilizeCheck = document.getElementById('stabilizeCheck');
 
         const valPitch = document.getElementById('valPitch');
-        const valServo = document.getElementById('valServo');
         const valAbs = document.getElementById('valAbs');
-        const valSpeed = document.getElementById('valSpeed'); // 新增輪速綁定
+        const valSpeed = document.getElementById('valSpeed');
+        const valCog = document.getElementById('valCog'); 
 
         let x = 450;             
         let v = 0;               
@@ -156,8 +156,8 @@
         const historyLength = 400;
         const history = {
             base_pitch: new Array(historyLength).fill(0),
-            servo_angle: new Array(historyLength).fill(0),
-            platform_absolute: new Array(historyLength).fill(0)
+            platform_absolute: new Array(historyLength).fill(0),
+            cog_offset: new Array(historyLength).fill(0)
         };
 
         speedSlider.addEventListener('input', (e) => {
@@ -191,38 +191,76 @@
             if (x > 950) x = -50;
             if (x < -50) x = 950;
 
+            // 計算絕對角度
             let servo_angle_rad = isStabilized ? -theta : 0;
             let platform_absolute_rad = theta + servo_angle_rad;
 
             let pitchDeg = theta * 57.3;
-            let servoDeg = servo_angle_rad * 57.3;
             let absDeg = platform_absolute_rad * 57.3;
 
+            // --- 精確重心 (CoG) 運算模型 ---
+            const L = 80; // 腿部長度
+            const bodyCenterY = 35; // 機身中心相對於關節點的高度
+            const massLeg = 0.2; // 腿部佔總重 20%
+            const massBody = 0.8; // 機身(含電池)佔總重 80%
+
+            // 關節點的絕對座標 (相對於輪軸)
+            let pivot_x = L * Math.sin(theta);
+            
+            // 機身重心的絕對 X 座標
+            // 若開啟補償，機身永遠水平，其重心就在關節點正上方，X座標不變
+            let body_cog_x = pivot_x + bodyCenterY * Math.sin(platform_absolute_rad);
+            
+            // 腿部重心的絕對 X 座標 (假設在腿部正中央)
+            let leg_cog_x = (L / 2) * Math.sin(theta);
+
+            // 系統總重心 X 座標
+            let total_cog_x = (massLeg * leg_cog_x) + (massBody * body_cog_x);
+
+            // 更新 UI 數據
             valPitch.textContent = (pitchDeg > 0 ? '+' : '') + pitchDeg.toFixed(1) + '°';
-            valServo.textContent = (servoDeg > 0 ? '+' : '') + servoDeg.toFixed(1) + '°';
             valAbs.textContent   = (absDeg > 0 ? '+' : '') + absDeg.toFixed(1) + '°';
-            valSpeed.textContent = (v > 0 ? '+' : '') + v.toFixed(1); // 顯示輪速
+            valSpeed.textContent = (v > 0 ? '+' : '') + v.toFixed(1); 
+            valCog.textContent = (total_cog_x > 0 ? '+' : '') + total_cog_x.toFixed(1) + ' px'; 
 
             history.base_pitch.push(pitchDeg); history.base_pitch.shift();
-            history.servo_angle.push(servoDeg); history.servo_angle.shift();
             history.platform_absolute.push(absDeg); history.platform_absolute.shift();
+            history.cog_offset.push(total_cog_x); history.cog_offset.shift();
         }
 
         function drawRobot() {
             simCtx.clearRect(0, 0, simCanvas.width, simCanvas.height);
             
+            // 畫地面
             simCtx.beginPath();
-            simCtx.moveTo(0, 240); simCtx.lineTo(900, 240);
+            simCtx.moveTo(0, 260); simCtx.lineTo(900, 260);
             simCtx.strokeStyle = '#555'; simCtx.lineWidth = 4; simCtx.stroke();
             simCtx.strokeStyle = '#333'; simCtx.lineWidth = 2;
             for(let i = -100; i < 1000; i+= 50) {
                 let lineX = (i - x % 50);
-                simCtx.beginPath(); simCtx.moveTo(lineX, 240); simCtx.lineTo(lineX, 250); simCtx.stroke();
+                simCtx.beginPath(); simCtx.moveTo(lineX, 260); simCtx.lineTo(lineX, 270); simCtx.stroke();
             }
 
+            // --- 畫出全域重力垂載線與重心 ---
+            const lastCogX = history.cog_offset[historyLength - 1];
             simCtx.save();
-            simCtx.translate(x, 220);
+            simCtx.translate(x, 240); 
+            
+            simCtx.beginPath();
+            simCtx.moveTo(lastCogX, -160);
+            simCtx.lineTo(lastCogX, 20);
+            simCtx.setLineDash([5, 5]);
+            simCtx.strokeStyle = 'rgba(255, 71, 87, 0.4)';
+            simCtx.lineWidth = 2;
+            simCtx.stroke();
+            
+            simCtx.setLineDash([]);
+            simCtx.restore();
 
+            simCtx.save();
+            simCtx.translate(x, 240);
+
+            // 畫輪胎
             simCtx.beginPath(); simCtx.arc(0, 0, 20, 0, Math.PI * 2);
             simCtx.fillStyle = '#1e1e24'; simCtx.fill();
             simCtx.strokeStyle = '#a9a9a9'; simCtx.lineWidth = 4; simCtx.stroke();
@@ -232,6 +270,7 @@
             simCtx.strokeStyle = '#00d2d3'; simCtx.lineWidth = 3; simCtx.stroke();
             simCtx.restore();
 
+            // 畫腿部
             simCtx.rotate(theta);
             simCtx.fillStyle = '#4a2f1d'; 
             simCtx.fillRect(-8, -80, 16, 80);
@@ -239,6 +278,7 @@
             simCtx.beginPath(); simCtx.arc(0, -80, 7, 0, Math.PI * 2);
             simCtx.fillStyle = '#dcdde1'; simCtx.fill();
 
+            // 畫機身
             simCtx.translate(0, -80);
             const isStabilized = stabilizeCheck.checked;
             if (isStabilized) {
@@ -247,12 +287,29 @@
 
             simCtx.fillStyle = '#f5f6fa';
             simCtx.fillRect(-45, -70, 90, 70);
-            
             simCtx.fillStyle = '#e84118';
             simCtx.fillRect(-25, -75, 50, 5);
             simCtx.fillStyle = '#2f3640';
             simCtx.fillRect(-15, -80, 10, 5);
+            simCtx.restore();
 
+            // 畫上重心紅點 (標靶圖案)
+            simCtx.save();
+            simCtx.translate(x, 240);
+            
+            const L = 80; 
+            const bodyCenterY = 35; 
+            let abs_rad = isStabilized ? 0 : theta;
+            let pivot_y = -L * Math.cos(theta);
+            let total_cog_y = (0.2 * (-L/2 * Math.cos(theta))) + (0.8 * (pivot_y - bodyCenterY * Math.cos(abs_rad)));
+
+            simCtx.beginPath(); simCtx.arc(lastCogX, total_cog_y, 6, 0, Math.PI * 2);
+            simCtx.fillStyle = '#ff4757'; simCtx.fill();
+            simCtx.strokeStyle = '#fff'; simCtx.lineWidth = 2; simCtx.stroke();
+            simCtx.beginPath(); simCtx.moveTo(lastCogX - 12, total_cog_y); simCtx.lineTo(lastCogX + 12, total_cog_y);
+            simCtx.moveTo(lastCogX, total_cog_y - 12); simCtx.lineTo(lastCogX, total_cog_y + 12);
+            simCtx.strokeStyle = '#ff4757'; simCtx.lineWidth = 2; simCtx.stroke();
+            
             simCtx.restore();
         }
 
@@ -275,10 +332,11 @@
                 }
                 chartCtx.stroke();
             }
-
-            drawLine(history.servo_angle, '#feca57', 3);      
+     
             drawLine(history.base_pitch, '#ff9ff3', 3);       
             drawLine(history.platform_absolute, '#00d2d3', 3); 
+            // 將重心偏移量畫在圖表上，縮放係數設為 2
+            drawLine(history.cog_offset, '#ff4757', 2); 
         }
 
         function loop() {
