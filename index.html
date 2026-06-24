@@ -221,7 +221,7 @@
             valPitch.textContent = (pitchDeg > 0 ? '+' : '') + pitchDeg.toFixed(1) + '°';
             valAbs.textContent   = (absDeg > 0 ? '+' : '') + absDeg.toFixed(1) + '°';
             valSpeed.textContent = (v > 0 ? '+' : '') + v.toFixed(1); 
-            valCog.textContent = (total_cog_x > 0 ? '+' : '') + total_cog_x.toFixed(1) + ' px'; 
+            valCog.textContent = (total_cog_x > 0 ? '+' : '') + total_cog_x.toFixed(1); 
 
             history.base_pitch.push(pitchDeg); history.base_pitch.shift();
             history.platform_absolute.push(absDeg); history.platform_absolute.shift();
