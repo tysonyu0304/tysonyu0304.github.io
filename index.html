@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>雙輪平衡機器人 - 平台補償模擬</title>
+    <title>雙輪平衡機器人 - 仿生機身水平補償模擬</title>
     <style>
         body {
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
@@ -22,7 +22,7 @@
             background-color: #2b2b36;
             padding: 20px;
             border-radius: 8px;
-            width: 800px;
+            width: 900px; /* 稍微加寬以容納更多數據 */
             box-sizing: border-box;
             margin-bottom: 15px;
             box-shadow: 0 4px 6px rgba(0,0,0,0.3);
@@ -62,7 +62,7 @@
         input:checked + .slider { background-color: #00d2d3; }
         input:checked + .slider:before { transform: translateX(26px); }
 
-        .canvas-container { display: flex; flex-direction: column; gap: 10px; width: 800px; }
+        .canvas-container { display: flex; flex-direction: column; gap: 10px; width: 900px; }
         
         .data-panel {
             display: flex;
@@ -93,7 +93,7 @@
 
     <div class="header">
         <h1>主機身主動水平補償 (Active Body Leveling)</h1>
-        <p>觀察下方腿部連桿為了加速而傾斜時，伺服馬達如何維持上方白色主機身的絕對水平。</p>
+        <p>觀察下方腿部連桿為了加速而傾斜時，伺服馬達如何維持上方主機身的絕對水平。</p>
     </div>
 
     <div class="panel">
@@ -113,15 +113,16 @@
     </div>
 
     <div class="canvas-container">
-        <canvas id="simCanvas" width="800" height="280"></canvas>
+        <canvas id="simCanvas" width="900" height="280"></canvas>
         
         <div class="data-panel">
-            <div class="data-item"><span style="color: #ff9ff3;">腿部連桿傾角 (Leg):</span> <span id="valPitch">0.0°</span></div>
-            <div class="data-item"><span style="color: #feca57;">伺服馬達補償角:</span> <span id="valServo">0.0°</span></div>
-            <div class="data-item"><span style="color: #00d2d3;">機身絕對水平角 (Body):</span> <span id="valAbs">0.0°</span></div>
+            <div class="data-item"><span style="color: #ff9ff3;">腿部傾角:</span> <span id="valPitch">0.0°</span></div>
+            <div class="data-item"><span style="color: #feca57;">馬達補償:</span> <span id="valServo">0.0°</span></div>
+            <div class="data-item"><span style="color: #00d2d3;">機身絕對角:</span> <span id="valAbs">0.0°</span></div>
+            <div class="data-item"><span style="color: #10ac84;">當前輪速:</span> <span id="valSpeed">0.0</span></div>
         </div>
 
-        <canvas id="chartCanvas" width="800" height="180"></canvas>
+        <canvas id="chartCanvas" width="900" height="180"></canvas>
         <div class="legend">
             <div class="legend-item"><div class="color-box" style="background: #ff9ff3;"></div> 腿部連桿傾角</div>
             <div class="legend-item"><div class="color-box" style="background: #feca57;"></div> 伺服馬達作動角</div>
@@ -142,10 +143,11 @@
         const valPitch = document.getElementById('valPitch');
         const valServo = document.getElementById('valServo');
         const valAbs = document.getElementById('valAbs');
+        const valSpeed = document.getElementById('valSpeed'); // 新增輪速綁定
 
-        let x = 400;             
+        let x = 450;             
         let v = 0;               
-        let theta = 0;           // 腿部連桿傾角
+        let theta = 0;           
         let omega = 0;           
         let target_v = 0;        
         let speed_integral = 0;
@@ -167,7 +169,6 @@
             const dt = 0.02; 
             const isStabilized = stabilizeCheck.checked;
 
-            // 1. 速度環 PI 控制
             let speedError = target_v - v;
             speed_integral += speedError * dt;
             if(speed_integral > 200) speed_integral = 200;
@@ -177,7 +178,6 @@
             if(target_theta > 0.4) target_theta = 0.4;
             if(target_theta < -0.4) target_theta = -0.4;
 
-            // 2. 直立環 PD 控制 (驅動腿部連桿)
             let thetaError = target_theta - theta;
             let motor_accel = (thetaError * 180) - (omega * 12); 
             
@@ -188,10 +188,9 @@
             v += (-motor_accel * 0.4) * dt;
             x += v * dt;
 
-            if (x > 850) x = -50;
-            if (x < -50) x = 850;
+            if (x > 950) x = -50;
+            if (x < -50) x = 950;
 
-            // 3. 伺服馬達邏輯：逆向抵消腿部傾角
             let servo_angle_rad = isStabilized ? -theta : 0;
             let platform_absolute_rad = theta + servo_angle_rad;
 
@@ -202,6 +201,7 @@
             valPitch.textContent = (pitchDeg > 0 ? '+' : '') + pitchDeg.toFixed(1) + '°';
             valServo.textContent = (servoDeg > 0 ? '+' : '') + servoDeg.toFixed(1) + '°';
             valAbs.textContent   = (absDeg > 0 ? '+' : '') + absDeg.toFixed(1) + '°';
+            valSpeed.textContent = (v > 0 ? '+' : '') + v.toFixed(1); // 顯示輪速
 
             history.base_pitch.push(pitchDeg); history.base_pitch.shift();
             history.servo_angle.push(servoDeg); history.servo_angle.shift();
@@ -212,18 +212,17 @@
             simCtx.clearRect(0, 0, simCanvas.width, simCanvas.height);
             
             simCtx.beginPath();
-            simCtx.moveTo(0, 240); simCtx.lineTo(800, 240);
+            simCtx.moveTo(0, 240); simCtx.lineTo(900, 240);
             simCtx.strokeStyle = '#555'; simCtx.lineWidth = 4; simCtx.stroke();
             simCtx.strokeStyle = '#333'; simCtx.lineWidth = 2;
-            for(let i = -100; i < 900; i+= 50) {
+            for(let i = -100; i < 1000; i+= 50) {
                 let lineX = (i - x % 50);
                 simCtx.beginPath(); simCtx.moveTo(lineX, 240); simCtx.lineTo(lineX, 250); simCtx.stroke();
             }
 
             simCtx.save();
-            simCtx.translate(x, 220); // 輪軸中心
+            simCtx.translate(x, 220);
 
-            // 畫出帶有青色輪框的輪胎
             simCtx.beginPath(); simCtx.arc(0, 0, 20, 0, Math.PI * 2);
             simCtx.fillStyle = '#1e1e24'; simCtx.fill();
             simCtx.strokeStyle = '#a9a9a9'; simCtx.lineWidth = 4; simCtx.stroke();
@@ -233,28 +232,22 @@
             simCtx.strokeStyle = '#00d2d3'; simCtx.lineWidth = 3; simCtx.stroke();
             simCtx.restore();
 
-            // 旋轉並畫出深咖啡色的腿部連桿
             simCtx.rotate(theta);
             simCtx.fillStyle = '#4a2f1d'; 
             simCtx.fillRect(-8, -80, 16, 80);
             
-            // 伺服馬達關節點
             simCtx.beginPath(); simCtx.arc(0, -80, 7, 0, Math.PI * 2);
             simCtx.fillStyle = '#dcdde1'; simCtx.fill();
 
-            // 沿著腿部連桿移動到最上方，準備畫主機身
             simCtx.translate(0, -80);
             const isStabilized = stabilizeCheck.checked;
             if (isStabilized) {
-                // 伺服馬達作動，逆向旋轉抵消腿部傾角
                 simCtx.rotate(-theta);
             }
 
-            // 畫出白色的主機身方盒
             simCtx.fillStyle = '#f5f6fa';
             simCtx.fillRect(-45, -70, 90, 70);
             
-            // 點綴機身上方的紅色電路板與排線特徵
             simCtx.fillStyle = '#e84118';
             simCtx.fillRect(-25, -75, 50, 5);
             simCtx.fillStyle = '#2f3640';
